@@ -10,3 +10,10 @@ tar = "0.4"
 flate2 = "1"
 clap = { version = "4", features = ["derive"] }
 chrono = "0.4"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "z"
+panic = "abort"

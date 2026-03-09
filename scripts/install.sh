@@ -5,25 +5,188 @@ set -e
 BINARY_NAME="CleanZipForMac"
 INSTALL_PATH="/usr/local/bin/$BINARY_NAME"
 SERVICES_DIR="$HOME/Library/Services"
+ZIP_WORKFLOW="$SERVICES_DIR/Compress as Clean ZIP.workflow"
+TARGZ_WORKFLOW="$SERVICES_DIR/Compress as Clean TAR.GZ.workflow"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Check if running with --quick-actions-only flag
 QUICK_ACTIONS_ONLY=false
+DOCTOR_MODE=false
+UNINSTALL_MODE=false
+
 if [ "$1" = "--quick-actions-only" ]; then
     QUICK_ACTIONS_ONLY=true
+elif [ "$1" = "--doctor" ]; then
+    DOCTOR_MODE=true
+elif [ "$1" = "--uninstall" ]; then
+    UNINSTALL_MODE=true
 fi
 
 # Function to check if binary exists
 check_binary() {
-    if command -v $BINARY_NAME &> /dev/null; then
-        return 0
-    elif [ -f "$INSTALL_PATH" ]; then
+    if [ -x "$INSTALL_PATH" ]; then
         return 0
     else
         return 1
     fi
 }
+
+run_uninstall() {
+    echo "🗑️ Uninstalling CleanZipForMac..."
+    
+    if [ -f "$INSTALL_PATH" ]; then
+        echo "  • Removing binary: $INSTALL_PATH"
+        sudo rm -f "$INSTALL_PATH"
+    else
+        echo "  • Binary not found: $INSTALL_PATH"
+    fi
+    
+    if [ -d "$ZIP_WORKFLOW" ]; then
+        echo "  • Removing workflow: $ZIP_WORKFLOW"
+        rm -rf "$ZIP_WORKFLOW"
+    else
+        echo "  • Workflow not found: $ZIP_WORKFLOW"
+    fi
+    
+    if [ -d "$TARGZ_WORKFLOW" ]; then
+        echo "  • Removing workflow: $TARGZ_WORKFLOW"
+        rm -rf "$TARGZ_WORKFLOW"
+    else
+        echo "  • Workflow not found: $TARGZ_WORKFLOW"
+    fi
+    
+    if [ -x "/System/Library/CoreServices/pbs" ]; then
+        /System/Library/CoreServices/pbs -flush
+    fi
+    
+    echo "✅ Uninstallation complete!"
+    return 0
+}
+
+if [ "$UNINSTALL_MODE" = true ]; then
+    run_uninstall
+    exit $?
+fi
+
+run_doctor() {
+    local has_error=0
+
+    echo "🩺 Running Quick Actions diagnostics..."
+
+    if check_binary; then
+        echo "✅ Binary found: $INSTALL_PATH"
+    else
+        echo "❌ Binary not found or not executable: $INSTALL_PATH"
+        has_error=1
+    fi
+
+    if [ -f "$ZIP_WORKFLOW/Contents/document.wflow" ]; then
+        echo "✅ ZIP workflow exists"
+        if [ -f "$ZIP_WORKFLOW/Contents/Info.plist" ]; then
+            echo "✅ ZIP Info.plist exists"
+            if plutil -lint "$ZIP_WORKFLOW/Contents/Info.plist" > /dev/null 2>&1; then
+                echo "✅ ZIP Info.plist is valid"
+            else
+                echo "❌ ZIP Info.plist is invalid"
+                has_error=1
+            fi
+        else
+            echo "❌ ZIP Info.plist missing"
+            has_error=1
+        fi
+        if plutil -lint "$ZIP_WORKFLOW/Contents/document.wflow" > /dev/null 2>&1; then
+            echo "✅ ZIP workflow plist is valid"
+        else
+            echo "❌ ZIP workflow plist is invalid"
+            has_error=1
+        fi
+        local zip_input_type
+        local zip_accepts_type
+        zip_input_type="$(plutil -extract workflowMetaData.serviceInputTypeIdentifier raw "$ZIP_WORKFLOW/Contents/document.wflow" 2>/dev/null || true)"
+        zip_accepts_type="$(plutil -extract actions.0.action.AMAccepts.Types.0 raw "$ZIP_WORKFLOW/Contents/document.wflow" 2>/dev/null || true)"
+        if [ "$zip_input_type" = "com.apple.Automator.fileSystemObject" ]; then
+            echo "✅ ZIP workflow input type is com.apple.Automator.fileSystemObject"
+        else
+            echo "❌ ZIP workflow input type is invalid: $zip_input_type"
+            has_error=1
+        fi
+        if [ "$zip_accepts_type" = "com.apple.cocoa.path" ]; then
+            echo "✅ ZIP workflow AMAccepts type is com.apple.cocoa.path"
+        else
+            echo "❌ ZIP workflow AMAccepts type is invalid: $zip_accepts_type"
+            has_error=1
+        fi
+        if grep -Fq '"$BINARY" zip "$@"' "$ZIP_WORKFLOW/Contents/document.wflow"; then
+            echo "✅ ZIP workflow command matches expected invocation"
+        else
+            echo "❌ ZIP workflow command does not match expected invocation"
+            has_error=1
+        fi
+    else
+        echo "❌ ZIP workflow missing: $ZIP_WORKFLOW/Contents/document.wflow"
+        has_error=1
+    fi
+
+    if [ -f "$TARGZ_WORKFLOW/Contents/document.wflow" ]; then
+        echo "✅ TAR.GZ workflow exists"
+        if [ -f "$TARGZ_WORKFLOW/Contents/Info.plist" ]; then
+            echo "✅ TAR.GZ Info.plist exists"
+            if plutil -lint "$TARGZ_WORKFLOW/Contents/Info.plist" > /dev/null 2>&1; then
+                echo "✅ TAR.GZ Info.plist is valid"
+            else
+                echo "❌ TAR.GZ Info.plist is invalid"
+                has_error=1
+            fi
+        else
+            echo "❌ TAR.GZ Info.plist missing"
+            has_error=1
+        fi
+        if plutil -lint "$TARGZ_WORKFLOW/Contents/document.wflow" > /dev/null 2>&1; then
+            echo "✅ TAR.GZ workflow plist is valid"
+        else
+            echo "❌ TAR.GZ workflow plist is invalid"
+            has_error=1
+        fi
+        local targz_input_type
+        local targz_accepts_type
+        targz_input_type="$(plutil -extract workflowMetaData.serviceInputTypeIdentifier raw "$TARGZ_WORKFLOW/Contents/document.wflow" 2>/dev/null || true)"
+        targz_accepts_type="$(plutil -extract actions.0.action.AMAccepts.Types.0 raw "$TARGZ_WORKFLOW/Contents/document.wflow" 2>/dev/null || true)"
+        if [ "$targz_input_type" = "com.apple.Automator.fileSystemObject" ]; then
+            echo "✅ TAR.GZ workflow input type is com.apple.Automator.fileSystemObject"
+        else
+            echo "❌ TAR.GZ workflow input type is invalid: $targz_input_type"
+            has_error=1
+        fi
+        if [ "$targz_accepts_type" = "com.apple.cocoa.path" ]; then
+            echo "✅ TAR.GZ workflow AMAccepts type is com.apple.cocoa.path"
+        else
+            echo "❌ TAR.GZ workflow AMAccepts type is invalid: $targz_accepts_type"
+            has_error=1
+        fi
+        if grep -Fq '"$BINARY" targz "$@"' "$TARGZ_WORKFLOW/Contents/document.wflow"; then
+            echo "✅ TAR.GZ workflow command matches expected invocation"
+        else
+            echo "❌ TAR.GZ workflow command does not match expected invocation"
+            has_error=1
+        fi
+    else
+        echo "❌ TAR.GZ workflow missing: $TARGZ_WORKFLOW/Contents/document.wflow"
+        has_error=1
+    fi
+
+    if [ "$has_error" -eq 0 ]; then
+        echo "✅ Diagnostics passed"
+        return 0
+    else
+        echo "❌ Diagnostics failed"
+        return 1
+    fi
+}
+
+if [ "$DOCTOR_MODE" = true ]; then
+    run_doctor
+    exit $?
+fi
 
 # Build and install binary if needed
 if [ "$QUICK_ACTIONS_ONLY" = true ]; then
@@ -51,7 +214,6 @@ echo "🔧 Creating Quick Actions..."
 mkdir -p "$SERVICES_DIR"
 
 # Create ZIP Quick Action
-ZIP_WORKFLOW="$SERVICES_DIR/Compress as Clean ZIP.workflow"
 mkdir -p "$ZIP_WORKFLOW/Contents"
 cat > "$ZIP_WORKFLOW/Contents/document.wflow" << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -75,7 +237,7 @@ cat > "$ZIP_WORKFLOW/Contents/document.wflow" << 'EOF'
                     <true/>
                     <key>Types</key>
                     <array>
-                        <string>com.apple.cocoa.string</string>
+                        <string>com.apple.cocoa.path</string>
                     </array>
                 </dict>
                 <key>AMActionVersion</key>
@@ -109,7 +271,7 @@ cat > "$ZIP_WORKFLOW/Contents/document.wflow" << 'EOF'
                     <string>List</string>
                     <key>Types</key>
                     <array>
-                        <string>com.apple.cocoa.string</string>
+                        <string>com.apple.cocoa.path</string>
                     </array>
                 </dict>
                 <key>ActionBundlePath</key>
@@ -183,10 +345,12 @@ fi</string>
     <dict/>
     <key>workflowMetaData</key>
     <dict>
+        <key>serviceApplicationBundleID</key>
+        <string>com.apple.finder</string>
         <key>serviceInputTypeIdentifier</key>
-        <string>com.apple.cocoa.path</string>
+        <string>com.apple.Automator.fileSystemObject</string>
         <key>serviceOutputTypeIdentifier</key>
-        <string>public.folder</string>
+        <string>com.apple.Automator.nothing</string>
         <key>serviceProcessesInput</key>
         <integer>0</integer>
         <key>workflowTypeIdentifier</key>
@@ -196,8 +360,57 @@ fi</string>
 </plist>
 EOF
 
+cat > "$ZIP_WORKFLOW/Contents/Info.plist" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>English</string>
+    <key>CFBundleGetInfoString</key>
+    <string>Compress as Clean ZIP</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.cleanzip.workflow.zip</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Compress as Clean ZIP</string>
+    <key>CFBundlePackageType</key>
+    <string>BNDL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>NSPrincipalClass</key>
+    <string>AMWorkflowServiceApplication</string>
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Compress as Clean ZIP</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>runWorkflowAsService</string>
+            <key>NSRequiredContext</key>
+            <dict>
+                <key>NSApplicationIdentifier</key>
+                <string>com.apple.finder</string>
+            </dict>
+            <key>NSSendFileTypes</key>
+            <array>
+                <string>public.item</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>
+EOF
+
 # Create TAR.GZ Quick Action
-TARGZ_WORKFLOW="$SERVICES_DIR/Compress as Clean TAR.GZ.workflow"
 mkdir -p "$TARGZ_WORKFLOW/Contents"
 cat > "$TARGZ_WORKFLOW/Contents/document.wflow" << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -221,7 +434,7 @@ cat > "$TARGZ_WORKFLOW/Contents/document.wflow" << 'EOF'
                     <true/>
                     <key>Types</key>
                     <array>
-                        <string>com.apple.cocoa.string</string>
+                        <string>com.apple.cocoa.path</string>
                     </array>
                 </dict>
                 <key>AMActionVersion</key>
@@ -255,7 +468,7 @@ cat > "$TARGZ_WORKFLOW/Contents/document.wflow" << 'EOF'
                     <string>List</string>
                     <key>Types</key>
                     <array>
-                        <string>com.apple.cocoa.string</string>
+                        <string>com.apple.cocoa.path</string>
                     </array>
                 </dict>
                 <key>ActionBundlePath</key>
@@ -329,15 +542,67 @@ fi</string>
     <dict/>
     <key>workflowMetaData</key>
     <dict>
+        <key>serviceApplicationBundleID</key>
+        <string>com.apple.finder</string>
         <key>serviceInputTypeIdentifier</key>
-        <string>com.apple.cocoa.path</string>
+        <string>com.apple.Automator.fileSystemObject</string>
         <key>serviceOutputTypeIdentifier</key>
-        <string>public.folder</string>
+        <string>com.apple.Automator.nothing</string>
         <key>serviceProcessesInput</key>
         <integer>0</integer>
         <key>workflowTypeIdentifier</key>
         <string>com.apple.Automator.servicesMenu</string>
     </dict>
+</dict>
+</plist>
+EOF
+
+cat > "$TARGZ_WORKFLOW/Contents/Info.plist" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>English</string>
+    <key>CFBundleGetInfoString</key>
+    <string>Compress as Clean TAR.GZ</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.cleanzip.workflow.targz</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Compress as Clean TAR.GZ</string>
+    <key>CFBundlePackageType</key>
+    <string>BNDL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>NSPrincipalClass</key>
+    <string>AMWorkflowServiceApplication</string>
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Compress as Clean TAR.GZ</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>runWorkflowAsService</string>
+            <key>NSRequiredContext</key>
+            <dict>
+                <key>NSApplicationIdentifier</key>
+                <string>com.apple.finder</string>
+            </dict>
+            <key>NSSendFileTypes</key>
+            <array>
+                <string>public.item</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
 EOF
@@ -348,6 +613,12 @@ echo "Two Quick Actions have been created:"
 echo "  • Compress as Clean ZIP"
 echo "  • Compress as Clean TAR.GZ"
 echo ""
-echo "To use: Right-click any folder in Finder → Quick Actions → select the desired format"
+echo "To use: Right-click any file/folder in Finder → Quick Actions → select the desired format"
 echo ""
 echo "Note: You may need to log out and back in for the Quick Actions to appear in the context menu."
+
+if [ -x "/System/Library/CoreServices/pbs" ]; then
+    /System/Library/CoreServices/pbs -flush
+fi
+
+killall Finder > /dev/null 2>&1 || true

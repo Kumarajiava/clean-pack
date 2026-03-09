@@ -39,8 +39,6 @@ curl -sSL https://raw.githubusercontent.com/Kumarajiava/CleanZipForMac/main/scri
 ```bash
 git clone https://github.com/Kumarajiava/CleanZipForMac.git
 cd CleanZipForMac
-cargo build --release
-sudo cp target/release/CleanZipForMac /usr/local/bin/
 ./scripts/install.sh
 ```
 
@@ -68,12 +66,20 @@ Example: `my-folder.260309_144331.zip`
 
 ### Finder Quick Actions
 
-After running the install script, right-click any folder in Finder:
+After running the install script, right-click any file or folder in Finder:
 
 1. Select **Quick Actions**
 2. Choose **Compress as Clean ZIP** or **Compress as Clean TAR.GZ**
 
-The archive will be created in the same directory as the source folder.
+The archive will be created in the same directory as the source item.
+
+## Uninstall
+
+To uninstall the tool and remove the Quick Actions:
+
+```bash
+./scripts/install.sh --uninstall
+```
 
 ## Excluded Files
 
