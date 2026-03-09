@@ -119,7 +119,28 @@ cat > "$ZIP_WORKFLOW/Contents/document.wflow" << 'EOF'
                 <key>ActionParameters</key>
                 <dict>
                     <key>COMMAND_STRING</key>
-                    <string>/usr/local/bin/CleanZipForMac "$1" zip</string>
+                    <string>BINARY="/usr/local/bin/CleanZipForMac"
+if [ ! -x "$BINARY" ]; then
+    osascript -e 'display alert "CleanZipForMac not found" message "Please reinstall the application." as critical'
+    exit 1
+fi
+
+"$BINARY" zip "$@"
+RESULT=$?
+
+if [ $RESULT -eq 0 ]; then
+    if [ $# -eq 1 ]; then
+        NAME=$(basename "$1")
+        # Escape double quotes for AppleScript
+        NAME=${NAME//\"/\\\"}
+        MSG="Created ZIP archive for ${NAME}"
+    else
+        MSG="Created ZIP archive for $# items"
+    fi
+    osascript -e "display notification \"${MSG}\" with title \"Clean Zip\""
+else
+    osascript -e "display alert \"Failed to create ZIP archive\" as critical"
+fi</string>
                     <key>CheckedForUserDefaultShell</key>
                     <true/>
                     <key>inputMethod</key>
@@ -163,7 +184,7 @@ cat > "$ZIP_WORKFLOW/Contents/document.wflow" << 'EOF'
     <key>workflowMetaData</key>
     <dict>
         <key>serviceInputTypeIdentifier</key>
-        <string>public.folder</string>
+        <string>com.apple.cocoa.path</string>
         <key>serviceOutputTypeIdentifier</key>
         <string>public.folder</string>
         <key>serviceProcessesInput</key>
@@ -244,7 +265,28 @@ cat > "$TARGZ_WORKFLOW/Contents/document.wflow" << 'EOF'
                 <key>ActionParameters</key>
                 <dict>
                     <key>COMMAND_STRING</key>
-                    <string>/usr/local/bin/CleanZipForMac "$1" targz</string>
+                    <string>BINARY="/usr/local/bin/CleanZipForMac"
+if [ ! -x "$BINARY" ]; then
+    osascript -e 'display alert "CleanZipForMac not found" message "Please reinstall the application." as critical'
+    exit 1
+fi
+
+"$BINARY" targz "$@"
+RESULT=$?
+
+if [ $RESULT -eq 0 ]; then
+    if [ $# -eq 1 ]; then
+        NAME=$(basename "$1")
+        # Escape double quotes for AppleScript
+        NAME=${NAME//\"/\\\"}
+        MSG="Created TAR.GZ archive for ${NAME}"
+    else
+        MSG="Created TAR.GZ archive for $# items"
+    fi
+    osascript -e "display notification \"${MSG}\" with title \"Clean Zip\""
+else
+    osascript -e "display alert \"Failed to create TAR.GZ archive\" as critical"
+fi</string>
                     <key>CheckedForUserDefaultShell</key>
                     <true/>
                     <key>inputMethod</key>
@@ -288,7 +330,7 @@ cat > "$TARGZ_WORKFLOW/Contents/document.wflow" << 'EOF'
     <key>workflowMetaData</key>
     <dict>
         <key>serviceInputTypeIdentifier</key>
-        <string>public.folder</string>
+        <string>com.apple.cocoa.path</string>
         <key>serviceOutputTypeIdentifier</key>
         <string>public.folder</string>
         <key>serviceProcessesInput</key>

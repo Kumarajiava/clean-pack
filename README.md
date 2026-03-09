@@ -50,13 +50,19 @@ sudo cp target/release/CleanZipForMac /usr/local/bin/
 
 ```bash
 # Create a ZIP archive
-CleanZipForMac /path/to/folder zip
+CleanZipForMac zip /path/to/folder 
 
 # Create a TAR.GZ archive
-CleanZipForMac /path/to/folder targz
+CleanZipForMac targz /path/to/folder
+
+# Compress multiple files/folders
+CleanZipForMac zip file1.txt folder2 file3.png
 ```
 
-Output file format: `{folder-name}.{YYMMDD_HHMMSS}.{ext}`
+Output file format:
+
+- Single item: `{name}.{YYMMDD_HHMMSS}.{ext}`
+- Multiple items: `Archive.{YYMMDD_HHMMSS}.{ext}` (created in the parent directory)
 
 Example: `my-folder.260309_144331.zip`
 
