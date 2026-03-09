@@ -1,0 +1,12 @@
+[package]
+name = "CleanZipForMac"
+version = "0.1.0"
+edition = "2021"
+description = "A macOS tool to create clean archives without .DS_Store and other macOS junk files"
+
+[dependencies]
+zip = "8.2.0"
+tar = "0.4"
+flate2 = "1"
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
