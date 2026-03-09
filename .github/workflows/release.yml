@@ -1,0 +1,211 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            arch: arm64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            arch: x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/CleanZipForMac dist/CleanZipForMac-${{ matrix.arch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CleanZipForMac-${{ matrix.arch }}
+          path: dist/CleanZipForMac-${{ matrix.arch }}
+
+  sign:
+    name: Sign and Notarize
+    needs: build
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download arm64 artifact
+        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: CleanZipForMac-arm64
+          path: dist
+
+      - name: Download x64 artifact
+        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: CleanZipForMac-x64
+          path: dist
+
+      - name: Import Certificate
+        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo $CERTIFICATE_BASE64 | base64 --decode > certificate.p12
+          security create-keychain -p actions temp.keychain
+          security import certificate.p12 -k temp.keychain -P $CERTIFICATE_PASSWORD -T /usr/bin/codesign
+          security list-keychains -s temp.keychain
+          security default-keychain -s temp.keychain
+          security unlock-keychain -p actions temp.keychain
+          security set-key-partition-list -S apple-tool:,apple: -s -k actions temp.keychain
+
+      - name: Sign binaries
+        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        env:
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          codesign --sign "$SIGNING_IDENTITY" --options runtime --timestamp dist/CleanZipForMac-arm64
+          codesign --sign "$SIGNING_IDENTITY" --options runtime --timestamp dist/CleanZipForMac-x64
+
+      - name: Notarize arm64 binary
+        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cd dist
+          zip CleanZipForMac-arm64.zip CleanZipForMac-arm64
+          xcrun notarytool submit CleanZipForMac-arm64.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          rm CleanZipForMac-arm64.zip
+
+      - name: Notarize x64 binary
+        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cd dist
+          zip CleanZipForMac-x64.zip CleanZipForMac-x64
+          xcrun notarytool submit CleanZipForMac-x64.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          rm CleanZipForMac-x64.zip
+
+      - name: Upload signed artifacts
+        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-binaries
+          path: dist/*
+
+  release:
+    name: Create Release
+    needs: [build, sign]
+    runs-on: ubuntu-latest
+    if: always() && needs.build.result == 'success' && (needs.sign.result == 'success' || needs.sign.result == 'skipped')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          # Check if signed binaries exist
+          if [ -d "artifacts/signed-binaries" ]; then
+            cp artifacts/signed-binaries/CleanZipForMac-* release-assets/
+          else
+            cp artifacts/CleanZipForMac-arm64/CleanZipForMac-arm64 release-assets/
+            cp artifacts/CleanZipForMac-x64/CleanZipForMac-x64 release-assets/
+          fi
+          # Create install script for release
+          cp scripts/install.sh release-assets/
+          chmod +x release-assets/*
+
+      - name: Generate Checksums
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Prepare Release Note
+        run: |
+          cat <<EOF > release_note.md
+          ## Installation
+
+          ### Manual Install
+          Download the binary for your architecture:
+          - \`CleanZipForMac-arm64\` - Apple Silicon (M1/M2/M3)
+          - \`CleanZipForMac-x64\` - Intel Mac
+
+          \`\`\`bash
+          # Download and install
+          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/CleanZipForMac-arm64
+          chmod +x CleanZipForMac-arm64
+          sudo mv CleanZipForMac-arm64 /usr/local/bin/CleanZipForMac
+
+          # Run the install script to set up Quick Actions
+          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/install.sh
+          chmod +x install.sh
+          ./install.sh
+          \`\`\`
+
+          ### Checksums (SHA256)
+          \`\`\`
+          $(cat release-assets/SHA256SUMS.txt)
+          \`\`\`
+
+          ### What's Changed
+          See [CHANGELOG.md](CHANGELOG.md) for details.
+          EOF
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.version.outputs.VERSION }}
+          body_path: release_note.md
+          files: release-assets/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

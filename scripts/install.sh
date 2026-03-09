@@ -30,8 +30,7 @@ if [ "$QUICK_ACTIONS_ONLY" = true ]; then
     echo "🔧 Quick Actions only mode..."
     if ! check_binary; then
         echo "❌ Error: $BINARY_NAME binary not found."
-        echo "   Please install the binary first using:"
-        echo "   brew install $BINARY_NAME"
+        echo "   Please install the binary first."
         exit 1
     fi
 elif check_binary; then
