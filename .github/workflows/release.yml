@@ -54,22 +54,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check for secrets
+        id: check_secrets
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+        run: |
+          if [ -n "$CERT" ]; then
+            echo "has_secrets=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_secrets=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Download arm64 artifact
-        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        if: steps.check_secrets.outputs.has_secrets == 'true'
         uses: actions/download-artifact@v4
         with:
           name: CleanZipForMac-arm64
           path: dist
 
       - name: Download x64 artifact
-        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        if: steps.check_secrets.outputs.has_secrets == 'true'
         uses: actions/download-artifact@v4
         with:
           name: CleanZipForMac-x64
           path: dist
 
       - name: Import Certificate
-        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        if: steps.check_secrets.outputs.has_secrets == 'true'
         env:
           CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -83,7 +94,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k actions temp.keychain
 
       - name: Sign binaries
-        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        if: steps.check_secrets.outputs.has_secrets == 'true'
         env:
           SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
@@ -91,7 +102,7 @@ jobs:
           codesign --sign "$SIGNING_IDENTITY" --options runtime --timestamp dist/CleanZipForMac-x64
 
       - name: Notarize arm64 binary
-        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        if: steps.check_secrets.outputs.has_secrets == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
@@ -107,7 +118,7 @@ jobs:
           rm CleanZipForMac-arm64.zip
 
       - name: Notarize x64 binary
-        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        if: steps.check_secrets.outputs.has_secrets == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
@@ -123,7 +134,7 @@ jobs:
           rm CleanZipForMac-x64.zip
 
       - name: Upload signed artifacts
-        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        if: steps.check_secrets.outputs.has_secrets == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: signed-binaries
