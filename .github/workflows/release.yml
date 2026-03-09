@@ -39,13 +39,13 @@ jobs:
       - name: Package binary
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/CleanZipForMac dist/CleanZipForMac-${{ matrix.arch }}
+          cp target/${{ matrix.target }}/release/clean-pack dist/clean-pack-${{ matrix.arch }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CleanZipForMac-${{ matrix.arch }}
-          path: dist/CleanZipForMac-${{ matrix.arch }}
+          name: clean-pack-${{ matrix.arch }}
+          path: dist/clean-pack-${{ matrix.arch }}
 
   sign:
     name: Sign and Notarize
@@ -71,14 +71,14 @@ jobs:
         if: steps.check_secrets.outputs.has_secrets == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: CleanZipForMac-arm64
+          name: clean-pack-arm64
           path: dist
 
       - name: Download x64 artifact
         if: steps.check_secrets.outputs.has_secrets == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: CleanZipForMac-x64
+          name: clean-pack-x64
           path: dist
 
       - name: Import Certificate
@@ -100,8 +100,8 @@ jobs:
         env:
           SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
-          codesign --sign "$SIGNING_IDENTITY" --options runtime --timestamp dist/CleanZipForMac-arm64
-          codesign --sign "$SIGNING_IDENTITY" --options runtime --timestamp dist/CleanZipForMac-x64
+          codesign --sign "$SIGNING_IDENTITY" --options runtime --timestamp dist/clean-pack-arm64
+          codesign --sign "$SIGNING_IDENTITY" --options runtime --timestamp dist/clean-pack-x64
 
       - name: Notarize arm64 binary
         if: steps.check_secrets.outputs.has_secrets == 'true'
@@ -111,13 +111,13 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           cd dist
-          zip CleanZipForMac-arm64.zip CleanZipForMac-arm64
-          xcrun notarytool submit CleanZipForMac-arm64.zip \
+          zip clean-pack-arm64.zip clean-pack-arm64
+          xcrun notarytool submit clean-pack-arm64.zip \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
             --wait
-          rm CleanZipForMac-arm64.zip
+          rm clean-pack-arm64.zip
 
       - name: Notarize x64 binary
         if: steps.check_secrets.outputs.has_secrets == 'true'
@@ -127,13 +127,13 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           cd dist
-          zip CleanZipForMac-x64.zip CleanZipForMac-x64
-          xcrun notarytool submit CleanZipForMac-x64.zip \
+          zip clean-pack-x64.zip clean-pack-x64
+          xcrun notarytool submit clean-pack-x64.zip \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
             --wait
-          rm CleanZipForMac-x64.zip
+          rm clean-pack-x64.zip
 
       - name: Upload signed artifacts
         if: steps.check_secrets.outputs.has_secrets == 'true'
@@ -162,10 +162,10 @@ jobs:
           mkdir -p release-assets
           # Check if signed binaries exist
           if [ -d "artifacts/signed-binaries" ]; then
-            cp artifacts/signed-binaries/CleanZipForMac-* release-assets/
+            cp artifacts/signed-binaries/clean-pack-* release-assets/
           else
-            cp artifacts/CleanZipForMac-arm64/CleanZipForMac-arm64 release-assets/
-            cp artifacts/CleanZipForMac-x64/CleanZipForMac-x64 release-assets/
+            cp artifacts/clean-pack-arm64/clean-pack-arm64 release-assets/
+            cp artifacts/clean-pack-x64/clean-pack-x64 release-assets/
           fi
           # Create install script for release
           cp scripts/install.sh release-assets/
@@ -188,14 +188,14 @@ jobs:
 
           ### Manual Install
           Download the binary for your architecture:
-          - \`CleanZipForMac-arm64\` - Apple Silicon (M1/M2/M3)
-          - \`CleanZipForMac-x64\` - Intel Mac
+          - \`clean-pack-arm64\` - Apple Silicon (M1/M2/M3)
+          - \`clean-pack-x64\` - Intel Mac
 
           \`\`\`bash
           # Download and install
-          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/CleanZipForMac-arm64
-          chmod +x CleanZipForMac-arm64
-          sudo mv CleanZipForMac-arm64 /usr/local/bin/CleanZipForMac
+          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/clean-pack-arm64
+          chmod +x clean-pack-arm64
+          sudo mv clean-pack-arm64 /usr/local/bin/clean-pack
 
           # Run the install script to set up Quick Actions
           curl -LO https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/install.sh

@@ -1,5 +1,5 @@
 [package]
-name = "CleanZipForMac"
+name = "clean-pack"
 version = "0.1.0"
 edition = "2021"
 description = "A macOS tool to create clean archives without .DS_Store and other macOS junk files"

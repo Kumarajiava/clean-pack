@@ -2,7 +2,9 @@
 
 set -e
 
-BINARY_NAME="CleanZipForMac"
+BINARY_NAME="clean-pack"
+REPO_OWNER="Kumarajiava"
+REPO_NAME="clean-pack"
 INSTALL_PATH="/usr/local/bin/$BINARY_NAME"
 SERVICES_DIR="$HOME/Library/Services"
 ZIP_WORKFLOW="$SERVICES_DIR/Compress as Clean ZIP.workflow"
@@ -13,6 +15,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 QUICK_ACTIONS_ONLY=false
 DOCTOR_MODE=false
 UNINSTALL_MODE=false
+FORCE_REINSTALL=false
 
 if [ "$1" = "--quick-actions-only" ]; then
     QUICK_ACTIONS_ONLY=true
@@ -20,7 +23,22 @@ elif [ "$1" = "--doctor" ]; then
     DOCTOR_MODE=true
 elif [ "$1" = "--uninstall" ]; then
     UNINSTALL_MODE=true
+elif [ "$1" = "--force" ]; then
+    FORCE_REINSTALL=true
 fi
+
+# Detect architecture
+ARCH=$(uname -m)
+if [ "$ARCH" = "x86_64" ]; then
+    BINARY_ARCH="x64"
+elif [ "$ARCH" = "arm64" ]; then
+    BINARY_ARCH="arm64"
+else
+    echo "❌ Unsupported architecture: $ARCH"
+    exit 1
+fi
+
+echo "🖥️ Detected architecture: $ARCH (using $BINARY_ARCH)"
 
 # Function to check if binary exists
 check_binary() {
@@ -32,7 +50,7 @@ check_binary() {
 }
 
 run_uninstall() {
-    echo "🗑️ Uninstalling CleanZipForMac..."
+    echo "🗑️ Uninstalling clean-pack..."
     
     if [ -f "$INSTALL_PATH" ]; then
         echo "  • Removing binary: $INSTALL_PATH"
@@ -40,6 +58,7 @@ run_uninstall() {
     else
         echo "  • Binary not found: $INSTALL_PATH"
     fi
+
     
     if [ -d "$ZIP_WORKFLOW" ]; then
         echo "  • Removing workflow: $ZIP_WORKFLOW"
@@ -196,17 +215,86 @@ if [ "$QUICK_ACTIONS_ONLY" = true ]; then
         echo "   Please install the binary first."
         exit 1
     fi
-elif check_binary; then
-    echo "✅ $BINARY_NAME already installed, skipping build..."
 else
-    echo "🔨 Building $BINARY_NAME..."
-    cd "$PROJECT_DIR"
-    cargo build --release
-
-    echo "📦 Installing binary to $INSTALL_PATH..."
-    sudo cp target/release/$BINARY_NAME "$INSTALL_PATH"
-    sudo chmod +x "$INSTALL_PATH"
+    echo "🔍 Checking for updates..."
+    
+    # Get latest release info
+    LATEST_RELEASE_URL="https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest"
+    if ! RELEASE_JSON=$(curl -sL "$LATEST_RELEASE_URL"); then
+        echo "❌ Failed to fetch release info from GitHub"
+        exit 1
+    fi
+    
+    TAG_NAME=$(echo "$RELEASE_JSON" | grep '"tag_name":' | sed -E 's/.*"tag_name": "([^"]+)".*/\1/')
+    echo "📦 Latest version: $TAG_NAME"
+    
+    TARGET_BINARY="clean-pack-$BINARY_ARCH"
+    DOWNLOAD_URL="https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/$TAG_NAME/$TARGET_BINARY"
+    CHECKSUM_URL="https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/$TAG_NAME/SHA256SUMS.txt"
+    
+    NEED_INSTALL=true
+    
+    if check_binary && [ "$FORCE_REINSTALL" = false ]; then
+        # Check if installed binary is the same version (by checksum)
+        # Note: Since we don't store version in binary metadata easily accessible without running it,
+        # we'll compare SHA256 of installed binary with the release one.
+        
+        echo "📥 Downloading checksums..."
+        TEMP_DIR=$(mktemp -d)
+        if curl -sL "$CHECKSUM_URL" -o "$TEMP_DIR/SHA256SUMS.txt"; then
+            INSTALLED_SUM=$(shasum -a 256 "$INSTALL_PATH" | awk '{print $1}')
+            EXPECTED_SUM=$(grep "$TARGET_BINARY" "$TEMP_DIR/SHA256SUMS.txt" | awk '{print $1}')
+            
+            if [ "$INSTALLED_SUM" = "$EXPECTED_SUM" ]; then
+                echo "✅ Installed version matches latest release. Skipping download."
+                NEED_INSTALL=false
+            else
+                echo "⚠️ Installed version differs from latest release. Updating..."
+            fi
+        else
+            echo "⚠️ Failed to download checksums. Proceeding with installation to be safe."
+        fi
+        rm -rf "$TEMP_DIR"
+    fi
+    
+    if [ "$NEED_INSTALL" = true ]; then
+        echo "⬇️ Downloading $TARGET_BINARY..."
+        TEMP_DIR=$(mktemp -d)
+        TEMP_BINARY="$TEMP_DIR/$TARGET_BINARY"
+        
+        if curl -fL --progress-bar "$DOWNLOAD_URL" -o "$TEMP_BINARY"; then
+            # Verify checksum
+            echo "🔐 Verifying checksum..."
+            if curl -fsL "$CHECKSUM_URL" -o "$TEMP_DIR/SHA256SUMS.txt"; then
+                DOWNLOADED_SUM=$(shasum -a 256 "$TEMP_BINARY" | awk '{print $1}')
+                EXPECTED_SUM=$(grep "$TARGET_BINARY" "$TEMP_DIR/SHA256SUMS.txt" | awk '{print $1}')
+                
+                if [ "$DOWNLOADED_SUM" != "$EXPECTED_SUM" ]; then
+                    echo "❌ Checksum verification failed!"
+                    echo "   Expected: $EXPECTED_SUM"
+                    echo "   Got:      $DOWNLOADED_SUM"
+                    rm -rf "$TEMP_DIR"
+                    exit 1
+                else
+                    echo "✅ Checksum verified"
+                fi
+            else
+                echo "⚠️ Could not download checksums for verification. Proceeding with caution."
+            fi
+            
+            echo "📦 Installing binary to $INSTALL_PATH..."
+            sudo install -m 755 "$TEMP_BINARY" "$INSTALL_PATH"
+            rm -rf "$TEMP_DIR"
+            echo "✅ Installation successful!"
+        else
+            echo "❌ Download failed"
+            rm -rf "$TEMP_DIR"
+            exit 1
+        fi
+    fi
 fi
+
+
 
 echo "🔧 Creating Quick Actions..."
 
@@ -281,9 +369,9 @@ cat > "$ZIP_WORKFLOW/Contents/document.wflow" << 'EOF'
                 <key>ActionParameters</key>
                 <dict>
                     <key>COMMAND_STRING</key>
-                    <string>BINARY="/usr/local/bin/CleanZipForMac"
+                    <string>BINARY="/usr/local/bin/clean-pack"
 if [ ! -x "$BINARY" ]; then
-    osascript -e 'display alert "CleanZipForMac not found" message "Please reinstall the application." as critical'
+    osascript -e 'display alert "clean-pack not found" message "Please reinstall the application." as critical'
     exit 1
 fi
 
@@ -299,7 +387,7 @@ if [ $RESULT -eq 0 ]; then
     else
         MSG="Created ZIP archive for $# items"
     fi
-    osascript -e "display notification \"${MSG}\" with title \"Clean Zip\""
+    osascript -e "display notification \"${MSG}\" with title \"Clean Pack\""
 else
     osascript -e "display alert \"Failed to create ZIP archive\" as critical"
 fi</string>
@@ -370,7 +458,7 @@ cat > "$ZIP_WORKFLOW/Contents/Info.plist" << 'EOF'
     <key>CFBundleGetInfoString</key>
     <string>Compress as Clean ZIP</string>
     <key>CFBundleIdentifier</key>
-    <string>com.cleanzip.workflow.zip</string>
+    <string>com.cleanpack.workflow.zip</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -478,9 +566,9 @@ cat > "$TARGZ_WORKFLOW/Contents/document.wflow" << 'EOF'
                 <key>ActionParameters</key>
                 <dict>
                     <key>COMMAND_STRING</key>
-                    <string>BINARY="/usr/local/bin/CleanZipForMac"
+                    <string>BINARY="/usr/local/bin/clean-pack"
 if [ ! -x "$BINARY" ]; then
-    osascript -e 'display alert "CleanZipForMac not found" message "Please reinstall the application." as critical'
+    osascript -e 'display alert "clean-pack not found" message "Please reinstall the application." as critical'
     exit 1
 fi
 
@@ -496,7 +584,7 @@ if [ $RESULT -eq 0 ]; then
     else
         MSG="Created TAR.GZ archive for $# items"
     fi
-    osascript -e "display notification \"${MSG}\" with title \"Clean Zip\""
+    osascript -e "display notification \"${MSG}\" with title \"Clean Pack\""
 else
     osascript -e "display alert \"Failed to create TAR.GZ archive\" as critical"
 fi</string>
@@ -567,7 +655,7 @@ cat > "$TARGZ_WORKFLOW/Contents/Info.plist" << 'EOF'
     <key>CFBundleGetInfoString</key>
     <string>Compress as Clean TAR.GZ</string>
     <key>CFBundleIdentifier</key>
-    <string>com.cleanzip.workflow.targz</string>
+    <string>com.cleanpack.workflow.targz</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

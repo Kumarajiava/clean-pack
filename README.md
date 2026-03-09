@@ -1,6 +1,10 @@
-# Clean Zip for Mac
+# clean-pack
+
+[English](README.md) | [中文](README_zh-CN.md)
 
 A macOS tool that creates clean archives without macOS-specific junk files (`.DS_Store`, `__MACOSX/`, `._*` files).
+
+> **Note**: Formerly known as `CleanZipForMac`.
 
 ## Features
 
@@ -12,49 +16,50 @@ A macOS tool that creates clean archives without macOS-specific junk files (`.DS
 - 🖱️ Integrated with macOS Finder context menu (Quick Actions)
 - 📝 Timestamped output filenames
 - 🔒 Code signed and notarized (GitHub Releases)
+- 🖥️ Auto-detects Apple Silicon (arm64) or Intel (x64) architecture
 
 ## Installation
 
-### Option 1: GitHub Releases
+### One-Line Install (Recommended)
 
-Download from [Releases](https://github.com/Kumarajiava/CleanZipForMac/releases):
-
-| File | Architecture |
-|------|--------------|
-| `CleanZipForMac-arm64` | Apple Silicon (M1/M2/M3) |
-| `CleanZipForMac-x64` | Intel Mac |
+Run the following command in your terminal to download and install the latest version automatically. It will detect your Mac's architecture, verify the download, and set up Finder Quick Actions.
 
 ```bash
-# Download (example for Apple Silicon)
-curl -LO https://github.com/Kumarajiava/CleanZipForMac/releases/latest/download/CleanZipForMac-arm64
-chmod +x CleanZipForMac-arm64
-sudo mv CleanZipForMac-arm64 /usr/local/bin/CleanZipForMac
-
-# Set up Quick Actions
-curl -sSL https://raw.githubusercontent.com/Kumarajiava/CleanZipForMac/main/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/Kumarajiava/clean-pack/main/scripts/install.sh | bash
 ```
 
-### Option 2: Build from Source
+### Manual Install / Build from Source
+
+If you prefer to build from source or install manually:
 
 ```bash
-git clone https://github.com/Kumarajiava/CleanZipForMac.git
-cd CleanZipForMac
+git clone https://github.com/Kumarajiava/clean-pack.git
+cd clean-pack
 ./scripts/install.sh
 ```
 
 ## Usage
 
+### Finder Quick Actions
+
+Right-click any file or folder in Finder:
+
+1. Select **Quick Actions**
+2. Choose **Compress as Clean ZIP** or **Compress as Clean TAR.GZ**
+
+The archive will be created in the same directory as the source item.
+
 ### Command Line
 
 ```bash
 # Create a ZIP archive
-CleanZipForMac zip /path/to/folder 
+clean-pack zip /path/to/folder 
 
 # Create a TAR.GZ archive
-CleanZipForMac targz /path/to/folder
+clean-pack targz /path/to/folder
 
 # Compress multiple files/folders
-CleanZipForMac zip file1.txt folder2 file3.png
+clean-pack zip file1.txt folder2 file3.png
 ```
 
 Output file format:
@@ -64,21 +69,20 @@ Output file format:
 
 Example: `my-folder.260309_144331.zip`
 
-### Finder Quick Actions
+## Update
 
-After running the install script, right-click any file or folder in Finder:
+To update to the latest version, simply run the installation command again:
 
-1. Select **Quick Actions**
-2. Choose **Compress as Clean ZIP** or **Compress as Clean TAR.GZ**
-
-The archive will be created in the same directory as the source item.
+```bash
+curl -sSL https://raw.githubusercontent.com/Kumarajiava/clean-pack/main/scripts/install.sh | bash
+```
 
 ## Uninstall
 
 To uninstall the tool and remove the Quick Actions:
 
 ```bash
-./scripts/install.sh --uninstall
+curl -sSL https://raw.githubusercontent.com/Kumarajiava/clean-pack/main/scripts/install.sh | bash -s -- --uninstall
 ```
 
 ## Excluded Files

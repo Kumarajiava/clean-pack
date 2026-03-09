@@ -9,7 +9,7 @@ use chrono::Local;
 use clap::{Parser, ValueEnum};
 
 #[derive(Parser)]
-#[command(name = "CleanZipForMac")]
+#[command(name = "clean-pack")]
 #[command(about = "Create clean archives without macOS junk files")]
 #[command(version)]
 struct Cli {
