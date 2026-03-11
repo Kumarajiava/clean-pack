@@ -216,80 +216,99 @@ if [ "$QUICK_ACTIONS_ONLY" = true ]; then
         exit 1
     fi
 else
-    echo "🔍 Checking for updates..."
+    # Check for local build artifact first
+    LOCAL_BUILD_PATH="$PROJECT_DIR/target/release/$BINARY_NAME"
+    USE_LOCAL_BUILD=false
     
-    # Get latest release info
-    LATEST_RELEASE_URL="https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest"
-    if ! RELEASE_JSON=$(curl -sL "$LATEST_RELEASE_URL"); then
-        echo "❌ Failed to fetch release info from GitHub"
-        exit 1
+    if [ -f "$LOCAL_BUILD_PATH" ] && [ -x "$LOCAL_BUILD_PATH" ]; then
+        echo "📦 Found local build artifact at $LOCAL_BUILD_PATH"
+        USE_LOCAL_BUILD=true
     fi
     
-    TAG_NAME=$(echo "$RELEASE_JSON" | grep '"tag_name":' | sed -E 's/.*"tag_name": "([^"]+)".*/\1/')
-    echo "📦 Latest version: $TAG_NAME"
-    
-    TARGET_BINARY="clean-pack-$BINARY_ARCH"
-    DOWNLOAD_URL="https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/$TAG_NAME/$TARGET_BINARY"
-    CHECKSUM_URL="https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/$TAG_NAME/SHA256SUMS.txt"
-    
-    NEED_INSTALL=true
-    
-    if check_binary && [ "$FORCE_REINSTALL" = false ]; then
-        # Check if installed binary is the same version (by checksum)
-        # Note: Since we don't store version in binary metadata easily accessible without running it,
-        # we'll compare SHA256 of installed binary with the release one.
-        
-        echo "📥 Downloading checksums..."
-        TEMP_DIR=$(mktemp -d)
-        if curl -sL "$CHECKSUM_URL" -o "$TEMP_DIR/SHA256SUMS.txt"; then
-            INSTALLED_SUM=$(shasum -a 256 "$INSTALL_PATH" | awk '{print $1}')
-            EXPECTED_SUM=$(grep "$TARGET_BINARY" "$TEMP_DIR/SHA256SUMS.txt" | awk '{print $1}')
-            
-            if [ "$INSTALLED_SUM" = "$EXPECTED_SUM" ]; then
-                echo "✅ Installed version matches latest release. Skipping download."
-                NEED_INSTALL=false
-            else
-                echo "⚠️ Installed version differs from latest release. Updating..."
-            fi
+    if [ "$USE_LOCAL_BUILD" = true ]; then
+        echo "   Installing local build..."
+        if sudo install -m 755 "$LOCAL_BUILD_PATH" "$INSTALL_PATH"; then
+            echo "✅ Local build installed successfully!"
         else
-            echo "⚠️ Failed to download checksums. Proceeding with installation to be safe."
+            echo "❌ Failed to install local build"
+            exit 1
         fi
-        rm -rf "$TEMP_DIR"
-    fi
-    
-    if [ "$NEED_INSTALL" = true ]; then
-        echo "⬇️ Downloading $TARGET_BINARY..."
-        TEMP_DIR=$(mktemp -d)
-        TEMP_BINARY="$TEMP_DIR/$TARGET_BINARY"
+    else
+        echo "🔍 Checking for updates..."
         
-        if curl -fL --progress-bar "$DOWNLOAD_URL" -o "$TEMP_BINARY"; then
-            # Verify checksum
-            echo "🔐 Verifying checksum..."
-            if curl -fsL "$CHECKSUM_URL" -o "$TEMP_DIR/SHA256SUMS.txt"; then
-                DOWNLOADED_SUM=$(shasum -a 256 "$TEMP_BINARY" | awk '{print $1}')
+        # Get latest release info
+        LATEST_RELEASE_URL="https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest"
+        if ! RELEASE_JSON=$(curl -sL "$LATEST_RELEASE_URL"); then
+            echo "❌ Failed to fetch release info from GitHub"
+            exit 1
+        fi
+        
+        TAG_NAME=$(echo "$RELEASE_JSON" | grep '"tag_name":' | sed -E 's/.*"tag_name": "([^"]+)".*/\1/')
+        echo "📦 Latest version: $TAG_NAME"
+        
+        TARGET_BINARY="clean-pack-$BINARY_ARCH"
+        DOWNLOAD_URL="https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/$TAG_NAME/$TARGET_BINARY"
+        CHECKSUM_URL="https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/$TAG_NAME/SHA256SUMS.txt"
+        
+        NEED_INSTALL=true
+        
+        if check_binary && [ "$FORCE_REINSTALL" = false ]; then
+            # Check if installed binary is the same version (by checksum)
+            # Note: Since we don't store version in binary metadata easily accessible without running it,
+            # we'll compare SHA256 of installed binary with the release one.
+            
+            echo "📥 Downloading checksums..."
+            TEMP_DIR=$(mktemp -d)
+            if curl -sL "$CHECKSUM_URL" -o "$TEMP_DIR/SHA256SUMS.txt"; then
+                INSTALLED_SUM=$(shasum -a 256 "$INSTALL_PATH" | awk '{print $1}')
                 EXPECTED_SUM=$(grep "$TARGET_BINARY" "$TEMP_DIR/SHA256SUMS.txt" | awk '{print $1}')
                 
-                if [ "$DOWNLOADED_SUM" != "$EXPECTED_SUM" ]; then
-                    echo "❌ Checksum verification failed!"
-                    echo "   Expected: $EXPECTED_SUM"
-                    echo "   Got:      $DOWNLOADED_SUM"
-                    rm -rf "$TEMP_DIR"
-                    exit 1
+                if [ "$INSTALLED_SUM" = "$EXPECTED_SUM" ]; then
+                    echo "✅ Installed version matches latest release. Skipping download."
+                    NEED_INSTALL=false
                 else
-                    echo "✅ Checksum verified"
+                    echo "⚠️ Installed version differs from latest release. Updating..."
                 fi
             else
-                echo "⚠️ Could not download checksums for verification. Proceeding with caution."
+                echo "⚠️ Failed to download checksums. Proceeding with installation to be safe."
             fi
+            rm -rf "$TEMP_DIR"
+        fi
+        
+        if [ "$NEED_INSTALL" = true ]; then
+            echo "⬇️ Downloading $TARGET_BINARY..."
+            TEMP_DIR=$(mktemp -d)
+            TEMP_BINARY="$TEMP_DIR/$TARGET_BINARY"
             
-            echo "📦 Installing binary to $INSTALL_PATH..."
-            sudo install -m 755 "$TEMP_BINARY" "$INSTALL_PATH"
-            rm -rf "$TEMP_DIR"
-            echo "✅ Installation successful!"
-        else
-            echo "❌ Download failed"
-            rm -rf "$TEMP_DIR"
-            exit 1
+            if curl -fL --progress-bar "$DOWNLOAD_URL" -o "$TEMP_BINARY"; then
+                # Verify checksum
+                echo "🔐 Verifying checksum..."
+                if curl -fsL "$CHECKSUM_URL" -o "$TEMP_DIR/SHA256SUMS.txt"; then
+                    DOWNLOADED_SUM=$(shasum -a 256 "$TEMP_BINARY" | awk '{print $1}')
+                    EXPECTED_SUM=$(grep "$TARGET_BINARY" "$TEMP_DIR/SHA256SUMS.txt" | awk '{print $1}')
+                    
+                    if [ "$DOWNLOADED_SUM" != "$EXPECTED_SUM" ]; then
+                        echo "❌ Checksum verification failed!"
+                        echo "   Expected: $EXPECTED_SUM"
+                        echo "   Got:      $DOWNLOADED_SUM"
+                        rm -rf "$TEMP_DIR"
+                        exit 1
+                    else
+                        echo "✅ Checksum verified"
+                    fi
+                else
+                    echo "⚠️ Could not download checksums for verification. Proceeding with caution."
+                fi
+                
+                echo "📦 Installing binary to $INSTALL_PATH..."
+                sudo install -m 755 "$TEMP_BINARY" "$INSTALL_PATH"
+                rm -rf "$TEMP_DIR"
+                echo "✅ Installation successful!"
+            else
+                echo "❌ Download failed"
+                rm -rf "$TEMP_DIR"
+                exit 1
+            fi
         fi
     fi
 fi
