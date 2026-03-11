@@ -17,25 +17,21 @@ pub fn create_zip(source_paths: &[PathBuf], output_path: &Path) -> io::Result<()
 
     for path in source_paths {
         // Compatibility mode: If there's only one path and it's a directory,
-        // we compress its contents to the root of the archive (original behavior).
-        // Otherwise (multiple paths or single file), we include the item itself in the root.
-        if source_paths.len() == 1 && path.is_dir() {
-            add_directory_to_zip(&mut zip, path, path, options)?;
+        // we compress its contents INCLUDING the directory itself.
+        // This ensures the archive extracts into a folder, not exploding files.
+        let base_path = path.parent().unwrap_or(Path::new("."));
+        if path.is_dir() {
+            add_directory_to_zip(&mut zip, path, base_path, options)?;
         } else {
-            let base_path = path.parent().unwrap_or(Path::new("."));
-            if path.is_dir() {
-                add_directory_to_zip(&mut zip, path, base_path, options)?;
-            } else {
-                // Add single file
-                let name = path.file_name().unwrap().to_str().unwrap();
-                // Check if excluded
-                if should_exclude(path) {
-                    continue;
-                }
-                let mut f = File::open(path)?;
-                zip.start_file(name, options)?;
-                io::copy(&mut f, &mut zip)?;
+            // Add single file
+            let name = path.file_name().unwrap().to_str().unwrap();
+            // Check if excluded
+            if should_exclude(path) {
+                continue;
             }
+            let mut f = File::open(path)?;
+            zip.start_file(name, options)?;
+            io::copy(&mut f, &mut zip)?;
         }
     }
 
@@ -51,7 +47,7 @@ fn add_directory_to_zip<W: Write + io::Seek>(
 ) -> io::Result<()> {
     if !dir.is_dir() {
         // This should normally not be reached if called correctly
-        return Ok(()); 
+        return Ok(());
     }
 
     for entry in std::fs::read_dir(dir)? {

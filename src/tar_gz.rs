@@ -2,8 +2,8 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use flate2::Compression;
 use flate2::write::GzEncoder;
+use flate2::Compression;
 use tar::Builder;
 
 use crate::filter::should_exclude;
@@ -15,22 +15,17 @@ pub fn create_tar_gz(source_paths: &[PathBuf], output_path: &Path) -> io::Result
     let mut tar = Builder::new(encoder);
 
     for path in source_paths {
-        if source_paths.len() == 1 && path.is_dir() {
-            // Compatibility mode: content of the directory at root
-            add_directory_to_tar(&mut tar, path, path)?;
+        // Multi-mode or single file: include the item itself
+        let base_path = path.parent().unwrap_or(Path::new("."));
+        if path.is_dir() {
+            add_directory_to_tar(&mut tar, path, base_path)?;
         } else {
-            // Multi-mode or single file: include the item itself
-            let base_path = path.parent().unwrap_or(Path::new("."));
-            if path.is_dir() {
-                add_directory_to_tar(&mut tar, path, base_path)?;
-            } else {
-                // Add single file
-                if should_exclude(path) {
-                    continue;
-                }
-                let relative_path = path.file_name().unwrap();
-                tar.append_path_with_name(path, relative_path)?;
+            // Add single file
+            if should_exclude(path) {
+                continue;
             }
+            let relative_path = path.file_name().unwrap();
+            tar.append_path_with_name(path, relative_path)?;
         }
     }
 
